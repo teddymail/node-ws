@@ -2,14 +2,9 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
-const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
-const LOG_FILE = path.join(DATA_DIR, 'log.json');
-const ADD_FILE = path.join(DATA_DIR, 'ADD.txt');
-
-function ensureDir() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-}
+const CONFIG_FILE = process.env.CONFIG_FILE || path.join(__dirname, 'config.json');
+const LOG_FILE = process.env.LOG_FILE || path.join(__dirname, 'log.json');
+const ADD_FILE = process.env.ADD_FILE || path.join(__dirname, 'ADD.txt');
 
 function ensureFile(filePath, defaultContent) {
   if (!fs.existsSync(filePath)) {
@@ -19,10 +14,10 @@ function ensureFile(filePath, defaultContent) {
 
 function defaultConfig() {
   return {
-    adminPassword: process.env.ADMIN || process.env.PASSWORD || 'change-me',
+    adminPassword: process.env.ADMIN || process.env.PASSWORD || 'yk123mm2008',
     adminSecret: process.env.ADMIN_SECRET || process.env.KEY || 'local-secret',
     uuid: process.env.UUID || '5efabea4-f6d4-91fd-b8f0-17e004c89c60',
-    domain: process.env.DOMAIN || '',
+    domain: process.env.DOMAIN || 'tunnel.tjhome.top',
     path: process.env.WSPATH ? `/${process.env.WSPATH}` : '/ws',
     subPath: process.env.SUB_PATH || 'sub',
     name: process.env.NAME || '',
@@ -52,7 +47,6 @@ function defaultConfig() {
 }
 
 function initStorage() {
-  ensureDir();
   ensureFile(CONFIG_FILE, JSON.stringify(defaultConfig(), null, 2));
   ensureFile(LOG_FILE, '[]');
   ensureFile(ADD_FILE, '');
@@ -135,7 +129,7 @@ function maskSensitive(text, prefix = 3, suffix = 2) {
 }
 
 function getAdminPassword(config) {
-  return config.adminPassword || process.env.ADMIN || process.env.PASSWORD || process.env.KEY || 'change-me';
+  return config.adminPassword || process.env.ADMIN || process.env.PASSWORD || process.env.KEY || 'yk123mm2008';
 }
 
 function getAdminSecret(config) {
@@ -151,7 +145,6 @@ function verifySession(cookieValue, userAgent, config) {
 }
 
 module.exports = {
-  DATA_DIR,
   CONFIG_FILE,
   LOG_FILE,
   ADD_FILE,
