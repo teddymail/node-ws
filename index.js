@@ -10,6 +10,7 @@ const { WebSocket, createWebSocketStream } = require('ws');
 
 const storage = require('./localManagement');
 const sub = require('./subscription');
+const ADMIN_PAGE_URL = 'https://edt-pages.github.io/admin';
 
 storage.initStorage();
 
@@ -84,6 +85,78 @@ function sendHtml(res, html, status = 200) {
 function sendJson(res, obj, status = 200) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(obj, null, 2));
+}
+
+function parseHostPortLoose(value, defaultPort = 443) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const withScheme = /^(socks5|https?):\/\//i.test(raw) ? raw : `socks5://${raw}`;
+  try {
+    const u = new URL(withScheme);
+    return {
+      host: u.hostname,
+      port: Number(u.port) || defaultPort,
+      protocol: u.protocol.replace(':', ''),
+    };
+  } catch {
+    return sub.parseHostPort(raw, defaultPort);
+  }
+}
+
+function checkTcpConnect(host, port, timeout = 3000) {
+  return new Promise(resolve => {
+    const socket = net.connect({ host, port });
+    let done = false;
+    const finish = ok => {
+      if (done) return;
+      done = true;
+      socket.destroy();
+      resolve(ok);
+    };
+    socket.setTimeout(timeout);
+    socket.on('connect', () => finish(true));
+    socket.on('timeout', () => finish(false));
+    socket.on('error', () => finish(false));
+  });
+}
+
+async function loadUpstreamAdminHtml() {
+  const response = await axios.get(ADMIN_PAGE_URL, {
+    timeout: 8000,
+    headers: { 'User-Agent': 'node-ws-admin' },
+    responseType: 'text',
+  });
+  const html = String(response.data || '');
+  const inject = `<script>(function(){
+function removeById(id){var el=document.getElementById(id); if(el) el.remove();}
+function removeByButtonOnclick(fnName){
+  var btns=document.querySelectorAll('button[onclick]');
+  btns.forEach(function(btn){
+    var on=btn.getAttribute('onclick')||'';
+    if(on.indexOf(fnName)>=0){
+      var card=btn.closest('.section-card,.status-card,.config-card,.stat-card,.card,.module-card,.dashboard-card');
+      if(card) card.remove(); else btn.remove();
+    }
+  });
+}
+function removeByText(text){
+  var nodes=document.querySelectorAll('h1,h2,h3,h4,h5,p,span,div,label,button');
+  nodes.forEach(function(n){
+    if((n.textContent||'').indexOf(text)>=0){
+      var card=n.closest('.section-card,.status-card,.config-card,.stat-card,.card,.module-card,.dashboard-card');
+      if(card) card.remove();
+    }
+  });
+}
+function run(){
+  ['clearTelegramModal','telegramConfigModal','clearCloudflareModal','cloudflareConfigModal'].forEach(removeById);
+  ['openTelegramConfigModal','clearTelegramConfig','openCloudflareConfigModal','clearCloudflareConfig','testTelegramConfig','confirmTelegramConfig','testCloudflareConfig','confirmCloudflareConfig'].forEach(removeByButtonOnclick);
+  ['Telegram Bot 通知设置','Cloudflare Workers/Pages 可用请求数统计','Telegram'].forEach(removeByText);
+}
+run();
+new MutationObserver(run).observe(document.documentElement,{childList:true,subtree:true});
+})();</script>`;
+  return html.includes('</body>') ? html.replace('</body>', `${inject}</body>`) : `${html}${inject}`;
 }
 
 function adminAuth(req) {
@@ -361,10 +434,15 @@ const httpServer = http.createServer(async (req, res) => {
 
   if (url.pathname === '/admin') {
     if (!requireAdmin(req, res)) return;
-    const html = fs.existsSync(path.join(__dirname, 'admin.html'))
-      ? fs.readFileSync(path.join(__dirname, 'admin.html'), 'utf8')
-      : `<html><body><h1>Admin</h1></body></html>`;
-    return sendHtml(res, html);
+    try {
+      const html = await loadUpstreamAdminHtml();
+      return sendHtml(res, html);
+    } catch {
+      const html = fs.existsSync(path.join(__dirname, 'admin.html'))
+        ? fs.readFileSync(path.join(__dirname, 'admin.html'), 'utf8')
+        : `<html><body><h1>Admin</h1></body></html>`;
+      return sendHtml(res, html);
+    }
   }
 
   if (url.pathname === '/admin/init') {
@@ -415,7 +493,74 @@ const httpServer = http.createServer(async (req, res) => {
 
   if (url.pathname === '/admin/check') {
     if (!requireAdmin(req, res)) return;
-    return sendJson(res, { success: true, message: 'ok' });
+    const raw = url.searchParams.get('socks5') || url.searchParams.get('http') || url.searchParams.get('https') || '';
+    if (!raw) return sendJson(res, { success: false, error: 'missing proxy parameter' }, 400);
+    const parsed = parseHostPortLoose(raw, url.searchParams.get('https') ? 443 : 1080);
+    if (!parsed?.host || !parsed?.port) return sendJson(res, { success: false, error: 'invalid proxy address' }, 400);
+    const ok = await checkTcpConnect(parsed.host, parsed.port, 4000);
+    return sendJson(res, {
+      success: ok,
+      protocol: parsed.protocol || 'socks5',
+      host: parsed.host,
+      port: parsed.port,
+      message: ok ? 'proxy reachable' : 'proxy unreachable'
+    }, ok ? 200 : 503);
+  }
+
+  if (url.pathname === '/admin/getADDAPI') {
+    if (!requireAdmin(req, res)) return;
+    const apiUrl = url.searchParams.get('url') || '';
+    const port = Number(url.searchParams.get('port') || 443);
+    if (!apiUrl) return sendJson(res, { success: false, data: [], error: 'missing url' }, 400);
+    try {
+      const r = await axios.get(apiUrl, { timeout: 6000, responseType: 'text' });
+      const lines = sub.normalizeLines(r.data).filter(line => !line.startsWith('#'));
+      const parsed = lines.map(line => {
+        const [addr, tag] = String(line).split('#');
+        const hp = sub.parseHostPort(addr, port);
+        if (!hp?.host) return null;
+        return `${hp.host}:${hp.port}${tag ? `#${tag}` : ''}`;
+      }).filter(Boolean);
+      return sendJson(res, { success: true, data: parsed });
+    } catch (e) {
+      return sendJson(res, { success: false, data: [], error: e.message }, 500);
+    }
+  }
+
+  if (url.pathname === '/admin/cf.json') {
+    if (!requireAdmin(req, res)) return;
+    if (req.method === 'GET') {
+      return sendJson(res, {
+        disabled: true,
+        message: 'Cloudflare usage module is disabled in this build'
+      });
+    }
+    return sendJson(res, {
+      success: false,
+      message: 'Cloudflare usage module is disabled in this build'
+    }, 410);
+  }
+
+  if (url.pathname === '/admin/tg.json') {
+    if (!requireAdmin(req, res)) return;
+    if (req.method === 'GET') {
+      return sendJson(res, {
+        disabled: true,
+        message: 'Telegram notify module is disabled in this build'
+      });
+    }
+    return sendJson(res, {
+      success: false,
+      message: 'Telegram notify module is disabled in this build'
+    }, 410);
+  }
+
+  if (url.pathname === '/admin/getCloudflareUsage') {
+    if (!requireAdmin(req, res)) return;
+    return sendJson(res, {
+      success: false,
+      message: 'Cloudflare usage module is disabled in this build'
+    }, 410);
   }
 
   res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });

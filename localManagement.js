@@ -13,19 +13,20 @@ function ensureFile(filePath, defaultContent) {
 }
 
 function defaultConfig() {
+  const defaultDomain = process.env.DOMAIN || 'tunnel.tjhome.top';
   return {
     adminPassword: process.env.ADMIN || process.env.PASSWORD || 'yk123mm2008',
     adminSecret: process.env.ADMIN_SECRET || process.env.KEY || 'local-secret',
     uuid: process.env.UUID || '5efabea4-f6d4-91fd-b8f0-17e004c89c60',
-    domain: process.env.DOMAIN || '',
+    domain: defaultDomain,
     path: process.env.WSPATH ? `/${process.env.WSPATH}` : '/ws',
     subPath: process.env.SUB_PATH || 'sub',
     name: process.env.NAME || '',
-    sni: process.env.SNI || process.env.DOMAIN || '',
-    hostHeader: process.env.HOST_HEADER || process.env.DOMAIN || '',
+    sni: process.env.SNI || process.env.DOMAIN || defaultDomain,
+    hostHeader: process.env.HOST_HEADER || process.env.DOMAIN || defaultDomain,
     fingerprint: 'chrome',
     transport: 'ws',
-    tls: Boolean(process.env.DOMAIN),
+    tls: Boolean(process.env.DOMAIN || defaultDomain),
     enableEch: false,
     enableGrpc: false,
     enableXhttp: false,
