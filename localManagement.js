@@ -17,23 +17,25 @@ function ensureFile(filePath, defaultContent) {
   }
 }
 
-function initStorage() {
-  ensureDir();
-
-  ensureFile(CONFIG_FILE, JSON.stringify({
-    adminPassword: 'change-me',
-    uuid: '5efabea4-f6d4-91fd-b8f0-17e004c89c60',
-    domain: '',
-    path: '/ws',
-    subPath: '/sub',
-    name: '',
-    autoAccess: false,
+function defaultConfig() {
+  return {
+    adminPassword: process.env.ADMIN || process.env.PASSWORD || 'change-me',
+    adminSecret: process.env.ADMIN_SECRET || process.env.KEY || 'local-secret',
+    uuid: process.env.UUID || '5efabea4-f6d4-91fd-b8f0-17e004c89c60',
+    domain: process.env.DOMAIN || '',
+    path: process.env.WSPATH ? `/${process.env.WSPATH}` : '/ws',
+    subPath: process.env.SUB_PATH || 'sub',
+    name: process.env.NAME || '',
+    autoAccess: String(process.env.AUTO_ACCESS || 'false') === 'true',
     fingerprint: 'chrome',
     transport: 'ws',
     tls: true,
     enableEch: false,
     enableGrpc: false,
     enableXhttp: false,
+    nezhaServer: process.env.NEZHA_SERVER || '',
+    nezhaPort: process.env.NEZHA_PORT || '',
+    nezhaKey: process.env.NEZHA_KEY || '',
     subscription: {
       subconverter: '',
       bestSubGenerator: '',
@@ -46,8 +48,12 @@ function initStorage() {
       account: '',
       whitelist: []
     }
-  }, null, 2));
+  };
+}
 
+function initStorage() {
+  ensureDir();
+  ensureFile(CONFIG_FILE, JSON.stringify(defaultConfig(), null, 2));
   ensureFile(LOG_FILE, '[]');
   ensureFile(ADD_FILE, '');
 }
@@ -80,12 +86,13 @@ function writeText(filePath, text) {
 
 function loadConfig() {
   initStorage();
-  return readJson(CONFIG_FILE, {});
+  const cfg = readJson(CONFIG_FILE, defaultConfig());
+  return { ...defaultConfig(), ...cfg };
 }
 
 function saveConfig(config) {
   initStorage();
-  writeJson(CONFIG_FILE, config);
+  writeJson(CONFIG_FILE, { ...defaultConfig(), ...config });
 }
 
 function loadLogs() {
@@ -127,10 +134,6 @@ function maskSensitive(text, prefix = 3, suffix = 2) {
   return text.slice(0, prefix) + '*'.repeat(text.length - prefix - suffix) + text.slice(-suffix);
 }
 
-function authCookieValue(userAgent, secret, password) {
-  return md5md5(String(userAgent || '') + String(secret || '') + String(password || ''));
-}
-
 function getAdminPassword(config) {
   return config.adminPassword || process.env.ADMIN || process.env.PASSWORD || process.env.KEY || 'change-me';
 }
@@ -140,7 +143,7 @@ function getAdminSecret(config) {
 }
 
 function createSession(userAgent, config) {
-  return authCookieValue(userAgent, getAdminSecret(config), getAdminPassword(config));
+  return md5md5(String(userAgent || '') + getAdminSecret(config) + getAdminPassword(config));
 }
 
 function verifySession(cookieValue, userAgent, config) {
@@ -153,6 +156,7 @@ module.exports = {
   LOG_FILE,
   ADD_FILE,
   initStorage,
+  defaultConfig,
   loadConfig,
   saveConfig,
   loadLogs,
