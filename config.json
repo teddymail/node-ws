@@ -1,0 +1,29 @@
+{
+  "adminPassword": "yk123mm2008",
+  "adminSecret": "local-secret",
+  "uuid": "5efabea4-f6d4-91fd-b8f0-17e004c89c60",
+  "domain": "tunnel.tjhome.top",
+  "path": "/ws",
+  "subPath": "sub",
+  "name": "",
+  "sni": "tunnel.tjhome.top",
+  "hostHeader": "tunnel.tjhome.top",
+  "fingerprint": "chrome",
+  "transport": "ws",
+  "tls": true,
+  "enableEch": false,
+  "enableGrpc": false,
+  "enableXhttp": false,
+  "subscription": {
+    "subconverter": "",
+    "bestSubGenerator": "",
+    "randomIpCount": 4
+  },
+  "proxy": {
+    "enabled": false,
+    "global": false,
+    "mode": "socks5",
+    "account": "",
+    "whitelist": []
+  }
+}

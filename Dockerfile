@@ -1,13 +1,13 @@
-FROM node:20-alpine3.20
+FROM node:20-alpine
 
-WORKDIR /tmp
+WORKDIR /app
 
-COPY index.js index.html package.json ./
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
 
+COPY . .
+
+ENV PORT=7860
 EXPOSE 7860
 
-RUN apk update && apk add --no-cache bash openssl curl &&\
-    chmod +x index.js &&\
-    npm install
-
-CMD ["node", "index.js"]
+CMD ["npm", "start"]
