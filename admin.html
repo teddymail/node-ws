@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>管理页面</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; background: #f6f7f9; }
+    .card { background: #fff; padding: 16px; border-radius: 12px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0,0,0,.06); }
+    textarea, input { width: 100%; box-sizing: border-box; padding: 10px; margin-top: 6px; }
+    button { padding: 10px 16px; margin-top: 8px; cursor: pointer; }
+    pre { background: #111; color: #0f0; padding: 12px; overflow: auto; }
+  </style>
+</head>
+<body>
+  <h1>管理页面</h1>
+
+  <div class="card">
+    <h3>配置</h3>
+    <textarea id="config" rows="18"></textarea>
+    <button onclick="saveConfig()">保存配置</button>
+    <button onclick="resetConfig()">重置配置</button>
+  </div>
+
+  <div class="card">
+    <h3>ADD.txt</h3>
+    <textarea id="addtxt" rows="10"></textarea>
+    <button onclick="saveAdd()">保存 ADD.txt</button>
+  </div>
+
+  <div class="card">
+    <h3>日志</h3>
+    <button onclick="loadLogs()">刷新日志</button>
+    <pre id="logs"></pre>
+  </div>
+
+  <div class="card">
+    <button onclick="logout()">退出登录</button>
+  </div>
+
+  <script>
+    async function loadConfig() {
+      const r = await fetch('/admin/config.json');
+      document.getElementById('config').value = JSON.stringify(await r.json(), null, 2);
+      const a = await fetch('/admin/ADD.txt');
+      document.getElementById('addtxt').value = await a.text();
+    }
+
+    async function saveConfig() {
+      const text = document.getElementById('config').value;
+      await fetch('/admin/config.json', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: text });
+      alert('已保存');
+    }
+
+    async function resetConfig() {
+      await fetch('/admin/init');
+      alert('已重置');
+      location.reload();
+    }
+
+    async function saveAdd() {
+      const text = document.getElementById('addtxt').value;
+      await fetch('/admin/ADD.txt', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: text });
+      alert('已保存');
+    }
+
+    async function loadLogs() {
+      const r = await fetch('/admin/log.json');
+      document.getElementById('logs').textContent = JSON.stringify(await r.json(), null, 2);
+    }
+
+    async function logout() {
+      location.href = '/logout';
+    }
+
+    loadConfig();
+    loadLogs();
+  </script>
+</body>
+</html>
