@@ -9,7 +9,7 @@
     .card { background: #fff; padding: 16px; border-radius: 12px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0,0,0,.06); }
     textarea, input { width: 100%; box-sizing: border-box; padding: 10px; margin-top: 6px; }
     button { padding: 10px 16px; margin-top: 8px; cursor: pointer; }
-    pre { background: #111; color: #0f0; padding: 12px; overflow: auto; }
+    pre { background: #111; color: #0f0; padding: 12px; overflow: auto; white-space: pre-wrap; }
   </style>
 </head>
 <body>
@@ -17,7 +17,7 @@
 
   <div class="card">
     <h3>配置</h3>
-    <textarea id="config" rows="18"></textarea>
+    <textarea id="config" rows="22"></textarea>
     <button onclick="saveConfig()">保存配置</button>
     <button onclick="resetConfig()">重置配置</button>
   </div>
@@ -48,8 +48,12 @@
 
     async function saveConfig() {
       const text = document.getElementById('config').value;
-      await fetch('/admin/config.json', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: text });
-      alert('已保存');
+      const r = await fetch('/admin/config.json', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: text
+      });
+      alert((await r.json()).message || '已保存');
     }
 
     async function resetConfig() {
@@ -60,8 +64,12 @@
 
     async function saveAdd() {
       const text = document.getElementById('addtxt').value;
-      await fetch('/admin/ADD.txt', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: text });
-      alert('已保存');
+      const r = await fetch('/admin/ADD.txt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: text
+      });
+      alert((await r.json()).message || '已保存');
     }
 
     async function loadLogs() {
@@ -69,7 +77,7 @@
       document.getElementById('logs').textContent = JSON.stringify(await r.json(), null, 2);
     }
 
-    async function logout() {
+    function logout() {
       location.href = '/logout';
     }
 
