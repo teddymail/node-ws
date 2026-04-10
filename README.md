@@ -1,75 +1,72 @@
-<div align="center">
+# Node-ws (Docker Space)
 
-# Node-ws
-基于serverless实现的vless+trojan双协议代理,轻量，无内核。
+基于 Node.js + WebSocket 的 VLESS/Trojan/SS 订阅代理服务，可运行在 Hugging Face Docker Space。
 
----
+这个版本已做精简：
+- 移除 Cloudflare Workers/KV 依赖逻辑
+- 移除 Telegram 通知相关能力
+- 保留核心能力：订阅输出、WS 代理、SNI 隐藏字段、自定义优选 IP、后台管理页
 
-Telegram交流反馈群组：https://t.me/eooceu
+## 核心路由
 
-huggingface视频教程地址：https://youtu.be/XERxg9AODeo
-</div>
+- `/sub` 或自定义订阅路径：输出 Base64 订阅
+- `/login`：后台登录
+- `/admin`：后台管理
+- `/<WSPATH>`：WebSocket 入口（默认从 UUID 前 8 位生成）
 
-## [web-hosting部署指南](https://github.com/eooce/node-ws/blob/main/web-hosting.md) （适用于所有带nodejs App功能DirectAdmin面板）
+## 环境变量
 
-* 用于node环境的玩具和容器，基于node三方ws库，vless+trojan双协议，集成哪吒探针服务(v0或v1)，可自行添加环境变量
+| 变量名 | 是否必须 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `PORT` | 否 | `7860` | 监听端口（Hugging Face Docker Space 推荐） |
+| `UUID` | 否 | `5efabea4-f6d4-91fd-b8f0-17e004c89c60` | 用户 UUID |
+| `DOMAIN` | 否 | 空 | 有域名时默认启用 TLS 链接参数 |
+| `WSPATH` | 否 | UUID 前 8 位 | WS 路径（不带前导 `/`） |
+| `SUB_PATH` | 否 | `sub` | 订阅路径 token |
+| `NAME` | 否 | 空 | 节点名前缀 |
+| `SNI` | 否 | `DOMAIN` | 订阅链接中的 SNI（用于隐藏/伪装） |
+| `HOST_HEADER` | 否 | `DOMAIN` | 订阅链接中的 WS Host 头 |
+| `ADMIN`/`PASSWORD` | 否 | `yk123mm2008` | 后台登录密码 |
+| `ADMIN_SECRET`/`KEY` | 否 | `local-secret` | 登录会话签名密钥 |
 
-* PaaS 平台设置的环境变量
-  | 变量名        | 是否必须 | 默认值 | 备注 |
-  | ------------ | ------ | ------ | ------ |
-  | UUID         | 否 |5efabea4-f6d4-91fd-b8f0-17e004c89c60| 开启了哪吒v1,请修改UUID|
-  | PORT         | 否 |  3000  |  监听端口                    |
-  | NEZHA_SERVER | 否 |        |哪吒v1填写形式：nz.abc.com:8008   哪吒v0填写形式：nz.abc.com|
-  | NEZHA_PORT   | 否 |        | 哪吒v1没有此变量，v0的agent端口| 
-  | NEZHA_KEY    | 否 |        | 哪吒v1的NZ_CLIENT_SECRET或v0的agent端口 |
-  | NAME         | 否 |        | 节点名称前缀，例如：Glitch |
-  | DOMAIN       | 是 |        | 项目分配的域名或已反代的域名，不包括https://前缀  |
-  | SUB_PATH     | 否 |  sub   | 订阅路径   |
-  | AUTO_ACCESS  | 否 |  false | 是否开启自动访问保活,false为关闭,true为开启,需同时填写DOMAIN变量 |
+## 优选 IP
 
-* 域名/${SUB_APTH}查看节点信息，非标端口，域名:端口/${SUB_APTH}  SUB_APTH为自行设置的订阅token，未设置默认为sub
+在后台 `ADD.txt` 中配置，每行一个：
 
-    
-* 温馨提示：READAME.md为说明文件，请不要上传。
-* js混肴地址：https://obfuscator.io
-
-### 使用cloudflare workers 或 snippets 反代域名给节点套cdn加速
-```
-export default {
-    async fetch(request, env) {
-        let url = new URL(request.url);
-        if (url.pathname.startsWith('/')) {
-            var arrStr = [
-                'change.your.domain', // 此处单引号里填写你的节点伪装域名
-            ];
-            url.protocol = 'https:'
-            url.hostname = getRandomArray(arrStr)
-            let new_request = new Request(url, request);
-            return fetch(new_request);
-        }
-        return env.ASSETS.fetch(request);
-    },
-};
-function getRandomArray(array) {
-  const randomIndex = Math.floor(Math.random() * array.length);
-  return array[randomIndex];
-}
+```text
+1.2.3.4:443#HK-1
+5.6.7.8:8443#JP-2
+example.com:443#SG-Domain
 ```
 
+- 格式：`host:port#备注`
+- `#备注` 可选
+- 留空时自动回退到当前服务地址
 
-## 开源协议说明（基于GPL）
+## 本地运行
 
-本项目遵循 GNU 通用公共许可证（GNU General Public License, 简称 GPL）发布，并附加以下说明：
+```bash
+npm ci
+npm start
+```
 
-1. 你可以自由地使用、复制、修改和分发本项目的源代码，前提是你必须保留原作者的信息及本协议内容；
-2. 修改后的版本也必须以相同协议开源；
-3. **未经原作者明确授权，不得将本项目或其任何部分用于商业用途。**
+## Docker 运行
 
-商业用途包括但不限于：
-- 将本项目嵌入到出售的软件、系统或服务中；
-- 通过本项目直接或间接获利（例如通过广告、SaaS服务等）；
-- 在公司或组织内部作为商业工具使用。
+```bash
+docker build -t node-ws:local .
+docker run --rm -p 7860:7860 -e PORT=7860 node-ws:local
+```
 
-如需获得商业授权，请联系原作者：[admin@eooce.com]
+## Hugging Face Docker Space
 
-版权所有 ©2025 `eooce`
+1. 新建 Space，选择 `Docker`。
+2. 推送本仓库代码。
+3. 在 Space Variables 中按需配置上表环境变量。
+4. 启动后访问：
+   - `https://<space-url>/login`
+   - `https://<space-url>/admin`
+   - `https://<space-url>/sub`
+
+## License
+
+GPL-3.0
