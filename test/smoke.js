@@ -25,10 +25,14 @@ function request({ port, path, method = 'GET', headers = {}, body = '' }) {
   const port = 18765;
   const configPath = path.join(__dirname, '..', 'config.json');
   let adminPassword = 'yk123mm2008';
+  let runtimeUuid = '5efabea4-f6d4-91fd-b8f0-17e004c89c60';
   try {
     const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     if (cfg && typeof cfg.adminPassword === 'string' && cfg.adminPassword.trim()) {
       adminPassword = cfg.adminPassword;
+    }
+    if (cfg && typeof cfg.uuid === 'string' && cfg.uuid.trim()) {
+      runtimeUuid = cfg.uuid.trim();
     }
   } catch {}
 
@@ -37,6 +41,8 @@ function request({ port, path, method = 'GET', headers = {}, body = '' }) {
     PORT: String(port),
     DOMAIN: '',
     SUB_PATH: 'sub',
+    SUB_TOKEN: 'smoke-test-token',
+    UUID: runtimeUuid,
     ADMIN: adminPassword,
     ADMIN_SECRET: 'smoke-test-secret',
   };
@@ -63,7 +69,7 @@ function request({ port, path, method = 'GET', headers = {}, body = '' }) {
     }
     if (!booted) throw new Error('server did not start in time');
 
-    const subRes = await request({ port, path: '/sub' });
+    const subRes = await request({ port, path: `/sub?token=${encodeURIComponent(env.SUB_TOKEN)}` });
     if (subRes.status !== 200) throw new Error(`/sub status=${subRes.status}`);
     if (!/^[A-Za-z0-9+/=\n]+$/.test(subRes.body)) throw new Error('/sub did not return base64 text');
 

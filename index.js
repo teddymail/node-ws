@@ -24,10 +24,47 @@ const PORT = Number(process.env.PORT || 7860);
 let uuid = UUID.replace(/-/g, '');
 let CurrentDomain = DOMAIN;
 let CurrentPort = DOMAIN ? 443 : PORT;
+let StableSubToken = '';
 const DNS_SERVERS = ['8.8.4.4', '1.1.1.1'];
+
+function getTokenFromConfig(cfg) {
+  return String(
+    process.env.SUB_TOKEN ||
+    cfg?.subToken ||
+    cfg?.subscription?.token ||
+    ''
+  ).trim();
+}
+
+function persistSubTokenIfMissing(cfg) {
+  const existing = getTokenFromConfig(cfg);
+  if (existing) {
+    if (cfg.subToken !== existing || cfg?.subscription?.token !== existing) {
+      const nextCfg = {
+        ...cfg,
+        subToken: existing,
+        subscription: { ...(cfg.subscription || {}), token: existing },
+      };
+      storage.saveConfig(nextCfg);
+      config = nextCfg;
+    }
+    return existing;
+  }
+
+  const generated = crypto.randomBytes(16).toString('hex');
+  const nextCfg = {
+    ...cfg,
+    subToken: generated,
+    subscription: { ...(cfg.subscription || {}), token: generated },
+  };
+  storage.saveConfig(nextCfg);
+  config = nextCfg;
+  return generated;
+}
 
 function reloadConfig() {
   config = storage.loadConfig();
+  StableSubToken = persistSubTokenIfMissing(config);
   CurrentDomain = config.domain || DOMAIN || CurrentDomain;
   uuid = String(config.uuid || UUID).replace(/-/g, '');
 }
@@ -106,7 +143,8 @@ function normalizeAdminConfigPayload(input, current) {
   const maybeUuid = src.uuid || src.UUID;
   if (maybeUuid) next.uuid = String(maybeUuid).trim();
 
-  const maybeDomain = src.domain || src.DOMAIN || src.host || src.HOST;
+  const hostsFromArray = Array.isArray(src.HOSTS) ? src.HOSTS.map(normalizeHost).filter(Boolean) : [];
+  const maybeDomain = src.domain || src.DOMAIN || src.host || src.HOST || hostsFromArray[0];
   if (maybeDomain !== undefined) next.domain = normalizeHost(maybeDomain);
 
   const maybePath = src.path || src.PATH;
@@ -127,6 +165,12 @@ function normalizeAdminConfigPayload(input, current) {
   if (src.sni || src.SNI) next.sni = normalizeHost(src.sni || src.SNI);
   if (src.hostHeader || src.HOST_HEADER) next.hostHeader = normalizeHost(src.hostHeader || src.HOST_HEADER);
 
+  // Keep legacy fields aligned to a single source-of-truth: domain.
+  if (next.domain) {
+    if (!next.sni) next.sni = next.domain;
+    if (!next.hostHeader) next.hostHeader = next.domain;
+  }
+
   if (src.subscription && typeof src.subscription === 'object') {
     next.subscription = { ...(next.subscription || {}), ...src.subscription };
   }
@@ -135,22 +179,64 @@ function normalizeAdminConfigPayload(input, current) {
     next.proxy = { ...(next.proxy || {}), ...src.proxy };
   }
 
+  const maybeToken =
+    src.subToken ||
+    src.SUB_TOKEN ||
+    src?.subscription?.token ||
+    src?.['优选订阅生成']?.TOKEN;
+  if (maybeToken !== undefined && String(maybeToken).trim()) {
+    next.subToken = String(maybeToken).trim();
+    next.subscription = { ...(next.subscription || {}), token: next.subToken };
+  }
+
+  if (!next.subToken && next?.subscription?.token) {
+    next.subToken = String(next.subscription.token).trim();
+  }
+
   return next;
 }
 
-function buildAdminConfigResponse(cfg) {
+function buildAdminConfigResponse(cfg, requestHost = '') {
   const pathValue = cfg.path || '/ws';
+  const hostValue = cfg.domain || '';
+  const portValue = hostValue ? 443 : PORT;
+  const tlsValue = Boolean(hostValue);
+  let linkValue = '';
+  try {
+    const links = sub.buildLinks({
+      uuid: cfg.uuid || UUID,
+      host: hostValue || 'example.com',
+      port: portValue,
+      path: pathValue,
+      name: cfg.name || 'Node',
+      isp: 'Node',
+      tls: tlsValue,
+      sni: cfg.sni || hostValue || 'example.com',
+      hostHeader: cfg.hostHeader || hostValue || 'example.com',
+    });
+    linkValue = Array.isArray(links) && links.length > 0 ? links[0] : '';
+  } catch {
+    linkValue = '';
+  }
+
+  const subToken = getTokenFromConfig(cfg) || StableSubToken;
+
   return {
     ...cfg,
     UUID: cfg.uuid || '',
-    DOMAIN: cfg.domain || '',
-    HOST: cfg.domain || '',
+    DOMAIN: hostValue,
+    HOST: hostValue,
+    HOSTS: hostValue ? [hostValue] : [],
     PATH: pathValue,
     WSPATH: String(pathValue).replace(/^\//, ''),
     SUB_PATH: cfg.subPath || 'sub',
     NAME: cfg.name || '',
-    SNI: cfg.sni || cfg.domain || '',
-    HOST_HEADER: cfg.hostHeader || cfg.domain || '',
+    SNI: cfg.sni || hostValue || '',
+    HOST_HEADER: cfg.hostHeader || hostValue || '',
+    LINK: linkValue,
+    优选订阅生成: {
+      TOKEN: subToken
+    }
   };
 }
 
@@ -218,10 +304,10 @@ function removeByText(text){
 }
 function run(){
   ['clearTelegramModal','telegramConfigModal','clearCloudflareModal','cloudflareConfigModal'].forEach(hideById);
-  ['openTelegramConfigModal','clearTelegramConfig','openCloudflareConfigModal','clearCloudflareConfig','testTelegramConfig','confirmTelegramConfig','testCloudflareConfig','confirmCloudflareConfig'].forEach(removeByButtonOnclick);
-  ['Telegram Bot 通知设置','Cloudflare Workers/Pages 可用请求数统计','Telegram'].forEach(removeByText);
+  ['openTelegramConfigModal','clearTelegramConfig','openCloudflareConfigModal','clearCloudflareConfig','testTelegramConfig','confirmTelegramConfig','testCloudflareConfig','confirmCloudflareConfig','openNotificationConfigModal','clearNotificationConfig','testNotificationConfig','confirmNotificationConfig'].forEach(removeByButtonOnclick);
+  ['Telegram Bot 通知设置','Cloudflare Workers/Pages 可用请求数统计','Telegram','消息通知设置','通知设置','🔔 消息通知设置'].forEach(removeByText);
 }
-['openTelegramConfigModal','clearTelegramConfig','testTelegramConfig','confirmTelegramConfig','closeTelegramConfigModal','openCloudflareConfigModal','clearCloudflareConfig','testCloudflareConfig','confirmCloudflareConfig','closeCloudflareConfigModal'].forEach(function(fn){
+['openTelegramConfigModal','clearTelegramConfig','testTelegramConfig','confirmTelegramConfig','closeTelegramConfigModal','openCloudflareConfigModal','clearCloudflareConfig','testCloudflareConfig','confirmCloudflareConfig','closeCloudflareConfigModal','openNotificationConfigModal','clearNotificationConfig','testNotificationConfig','confirmNotificationConfig','closeNotificationConfigModal'].forEach(function(fn){
   if(typeof window[fn] !== 'function') window[fn] = function(){ return false; };
 });
 run();
@@ -497,6 +583,12 @@ const httpServer = http.createServer(async (req, res) => {
   }
 
   if (url.pathname === `/${getRuntimeSubPath()}`) {
+    const expectedToken = StableSubToken || getTokenFromConfig(config);
+    const providedToken = String(url.searchParams.get('token') || '').trim();
+    if (!providedToken || providedToken !== expectedToken) {
+      return sendJson(res, { success: false, error: 'invalid token' }, 403);
+    }
+
     await getip();
     const addTxt = storage.loadAddTxt();
     const base64Content = await sub.generateSubscription({
@@ -508,6 +600,17 @@ const httpServer = http.createServer(async (req, res) => {
       hostHeader: config.hostHeader || config.domain || CurrentDomain,
       subscription: config.subscription || {},
     }, CurrentDomain, CurrentPort, addTxt);
+
+    const rawContent = sub.safeBase64Decode(base64Content) || '';
+
+    // Keep compatibility with admin-generated urls: /sub?token=...&b64|clash|sb
+    if (url.searchParams.has('clash') || url.searchParams.has('sb') || url.searchParams.has('raw')) {
+      return sendText(res, `${rawContent.trim()}\n`);
+    }
+    if (url.searchParams.has('b64')) {
+      return sendText(res, base64Content);
+    }
+
     return sendText(res, base64Content);
   }
 
@@ -539,7 +642,7 @@ const httpServer = http.createServer(async (req, res) => {
 
   if (url.pathname === '/admin/config.json') {
     if (!requireAdmin(req, res)) return;
-    if (req.method === 'GET') return sendJson(res, buildAdminConfigResponse(storage.loadConfig()));
+    if (req.method === 'GET') return sendJson(res, buildAdminConfigResponse(storage.loadConfig(), req.headers.host || ''));
     if (req.method === 'POST') {
       let body = '';
       req.on('data', c => body += c);
