@@ -137,7 +137,7 @@ function normalizeHost(value) {
 }
 
 function normalizeAdminConfigPayload(input, current) {
-  const next = { ...current };
+  const next = { ...current, ...(input || {}) };
   const src = input || {};
 
   const maybeUuid = src.uuid || src.UUID;
