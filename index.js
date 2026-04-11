@@ -27,44 +27,21 @@ let CurrentPort = DOMAIN ? 443 : PORT;
 let StableSubToken = '';
 const DNS_SERVERS = ['8.8.4.4', '1.1.1.1'];
 
-function getTokenFromConfig(cfg) {
-  return String(
-    process.env.SUB_TOKEN ||
-    cfg?.subToken ||
-    cfg?.subscription?.token ||
-    ''
-  ).trim();
-}
+function ensureStableSubToken() {
+  const envToken = String(process.env.SUB_TOKEN || '').trim();
+  if (envToken) return envToken;
 
-function persistSubTokenIfMissing(cfg) {
-  const existing = getTokenFromConfig(cfg);
-  if (existing) {
-    if (cfg.subToken !== existing || cfg?.subscription?.token !== existing) {
-      const nextCfg = {
-        ...cfg,
-        subToken: existing,
-        subscription: { ...(cfg.subscription || {}), token: existing },
-      };
-      storage.saveConfig(nextCfg);
-      config = nextCfg;
-    }
-    return existing;
-  }
+  const persisted = storage.loadSubToken();
+  if (persisted) return persisted;
 
   const generated = crypto.randomBytes(16).toString('hex');
-  const nextCfg = {
-    ...cfg,
-    subToken: generated,
-    subscription: { ...(cfg.subscription || {}), token: generated },
-  };
-  storage.saveConfig(nextCfg);
-  config = nextCfg;
+  storage.saveSubToken(generated);
   return generated;
 }
 
 function reloadConfig() {
   config = storage.loadConfig();
-  StableSubToken = persistSubTokenIfMissing(config);
+  StableSubToken = ensureStableSubToken();
   CurrentDomain = config.domain || DOMAIN || CurrentDomain;
   uuid = String(config.uuid || UUID).replace(/-/g, '');
 }
@@ -179,20 +156,6 @@ function normalizeAdminConfigPayload(input, current) {
     next.proxy = { ...(next.proxy || {}), ...src.proxy };
   }
 
-  const maybeToken =
-    src.subToken ||
-    src.SUB_TOKEN ||
-    src?.subscription?.token ||
-    src?.['优选订阅生成']?.TOKEN;
-  if (maybeToken !== undefined && String(maybeToken).trim()) {
-    next.subToken = String(maybeToken).trim();
-    next.subscription = { ...(next.subscription || {}), token: next.subToken };
-  }
-
-  if (!next.subToken && next?.subscription?.token) {
-    next.subToken = String(next.subscription.token).trim();
-  }
-
   return next;
 }
 
@@ -219,7 +182,7 @@ function buildAdminConfigResponse(cfg, requestHost = '') {
     linkValue = '';
   }
 
-  const subToken = getTokenFromConfig(cfg) || StableSubToken;
+  const subToken = StableSubToken || '';
 
   return {
     ...cfg,
@@ -234,6 +197,15 @@ function buildAdminConfigResponse(cfg, requestHost = '') {
     SNI: cfg.sni || hostValue || '',
     HOST_HEADER: cfg.hostHeader || hostValue || '',
     LINK: linkValue,
+    反代: {
+      PROXYIP: cfg?.proxy?.mode === 'auto' ? 'auto' : (cfg?.proxy?.account || ''),
+      SOCKS5: {
+        启用: cfg?.proxy?.enabled ? (cfg?.proxy?.mode || 'socks5') : false,
+        账号: cfg?.proxy?.account || '',
+        全局: Boolean(cfg?.proxy?.global),
+      },
+      路径模板: cfg?.proxy?.pathTemplate || {},
+    },
     优选订阅生成: {
       TOKEN: subToken
     }
@@ -307,10 +279,44 @@ function run(){
   ['openTelegramConfigModal','clearTelegramConfig','openCloudflareConfigModal','clearCloudflareConfig','testTelegramConfig','confirmTelegramConfig','testCloudflareConfig','confirmCloudflareConfig','openNotificationConfigModal','clearNotificationConfig','testNotificationConfig','confirmNotificationConfig'].forEach(removeByButtonOnclick);
   ['Telegram Bot 通知设置','Cloudflare Workers/Pages 可用请求数统计','Telegram','消息通知设置','通知设置','🔔 消息通知设置'].forEach(removeByText);
 }
+function ensureTokenRegenerateButton(){
+  if(document.getElementById('localTokenRegenerateBtn')) return;
+  var btn=document.createElement('button');
+  btn.id='localTokenRegenerateBtn';
+  btn.type='button';
+  btn.textContent='🔁 重置订阅Token';
+  btn.style.cssText='position:fixed;right:16px;bottom:16px;z-index:99999;padding:10px 14px;border-radius:8px;border:none;background:#0f766e;color:#fff;cursor:pointer;';
+  btn.onclick=async function(){
+    if(!confirm('确定重新生成订阅Token吗？生成后旧订阅链接将失效。')) return;
+    try{
+      var r=await fetch('/admin/token/regenerate',{method:'POST'});
+      var d=await r.json().catch(function(){return {};});
+      if(!r.ok || !d.success){ alert(d.error || d.message || '重置失败'); return; }
+      alert('Token已重置，请重新复制订阅链接');
+      location.reload();
+    }catch(_e){ alert('网络错误，重置失败'); }
+  };
+  document.body.appendChild(btn);
+}
+var _nativeFetch = window.fetch ? window.fetch.bind(window) : null;
+if(_nativeFetch){
+  window.fetch = function(input, init){
+    try{
+      var raw = (typeof input === 'string') ? input : (input && input.url ? input.url : '');
+      var u = new URL(raw, location.origin);
+      if(u.hostname === 'check-proxyip-api.cmliussss.net' && u.pathname === '/check'){
+        var proxyip = u.searchParams.get('proxyip') || '';
+        return _nativeFetch('/admin/check?proxyip=' + encodeURIComponent(proxyip), init);
+      }
+    }catch(_e){}
+    return _nativeFetch(input, init);
+  };
+}
 ['openTelegramConfigModal','clearTelegramConfig','testTelegramConfig','confirmTelegramConfig','closeTelegramConfigModal','openCloudflareConfigModal','clearCloudflareConfig','testCloudflareConfig','confirmCloudflareConfig','closeCloudflareConfigModal','openNotificationConfigModal','clearNotificationConfig','testNotificationConfig','confirmNotificationConfig','closeNotificationConfigModal'].forEach(function(fn){
   if(typeof window[fn] !== 'function') window[fn] = function(){ return false; };
 });
 run();
+ensureTokenRegenerateButton();
 new MutationObserver(run).observe(document.documentElement,{childList:true,subtree:true});
 })();</script>`;
   return html.includes('</body>') ? html.replace('</body>', `${inject}</body>`) : `${html}${inject}`;
@@ -583,7 +589,7 @@ const httpServer = http.createServer(async (req, res) => {
   }
 
   if (url.pathname === `/${getRuntimeSubPath()}`) {
-    const expectedToken = StableSubToken || getTokenFromConfig(config);
+    const expectedToken = StableSubToken;
     const providedToken = String(url.searchParams.get('token') || '').trim();
     if (!providedToken || providedToken !== expectedToken) {
       return sendJson(res, { success: false, error: 'invalid token' }, 403);
@@ -661,6 +667,14 @@ const httpServer = http.createServer(async (req, res) => {
     }
   }
 
+  if (url.pathname === '/admin/token/regenerate') {
+    if (!requireAdmin(req, res)) return;
+    if (req.method !== 'POST') return sendJson(res, { success: false, error: 'method not allowed' }, 405);
+    StableSubToken = crypto.randomBytes(16).toString('hex');
+    storage.saveSubToken(StableSubToken);
+    return sendJson(res, { success: true, token: StableSubToken, message: 'token regenerated' });
+  }
+
   if (url.pathname === '/admin/ADD.txt') {
     if (!requireAdmin(req, res)) return;
     if (req.method === 'GET') return sendText(res, storage.loadAddTxt());
@@ -677,7 +691,12 @@ const httpServer = http.createServer(async (req, res) => {
 
   if (url.pathname === '/admin/check') {
     if (!requireAdmin(req, res)) return;
-    const raw = url.searchParams.get('socks5') || url.searchParams.get('http') || url.searchParams.get('https') || '';
+    const raw =
+      url.searchParams.get('proxyip') ||
+      url.searchParams.get('socks5') ||
+      url.searchParams.get('http') ||
+      url.searchParams.get('https') ||
+      '';
     if (!raw) return sendJson(res, { success: false, error: 'missing proxy parameter' }, 400);
     const parsed = parseHostPortLoose(raw, url.searchParams.get('https') ? 443 : 1080);
     if (!parsed?.host || !parsed?.port) return sendJson(res, { success: false, error: 'invalid proxy address' }, 400);
