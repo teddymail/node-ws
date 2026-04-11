@@ -87,6 +87,73 @@ function sendJson(res, obj, status = 200) {
   res.end(JSON.stringify(obj, null, 2));
 }
 
+function normalizeHost(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  try {
+    const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+    const u = new URL(withScheme);
+    return u.hostname;
+  } catch {
+    return raw.replace(/^https?:\/\//i, '').split('/')[0].split(':')[0];
+  }
+}
+
+function normalizeAdminConfigPayload(input, current) {
+  const next = { ...current };
+  const src = input || {};
+
+  const maybeUuid = src.uuid || src.UUID;
+  if (maybeUuid) next.uuid = String(maybeUuid).trim();
+
+  const maybeDomain = src.domain || src.DOMAIN || src.host || src.HOST;
+  if (maybeDomain !== undefined) next.domain = normalizeHost(maybeDomain);
+
+  const maybePath = src.path || src.PATH;
+  if (maybePath) {
+    const p = String(maybePath).trim();
+    next.path = p.startsWith('/') ? p : `/${p}`;
+  } else if (src.WSPATH) {
+    const p = String(src.WSPATH).trim();
+    if (p) next.path = p.startsWith('/') ? p : `/${p}`;
+  }
+
+  const maybeSubPath = src.subPath || src.SUB_PATH;
+  if (maybeSubPath) next.subPath = String(maybeSubPath).replace(/^\/+/, '');
+
+  const maybeName = src.name || src.NAME;
+  if (maybeName !== undefined) next.name = String(maybeName);
+
+  if (src.sni || src.SNI) next.sni = normalizeHost(src.sni || src.SNI);
+  if (src.hostHeader || src.HOST_HEADER) next.hostHeader = normalizeHost(src.hostHeader || src.HOST_HEADER);
+
+  if (src.subscription && typeof src.subscription === 'object') {
+    next.subscription = { ...(next.subscription || {}), ...src.subscription };
+  }
+
+  if (src.proxy && typeof src.proxy === 'object') {
+    next.proxy = { ...(next.proxy || {}), ...src.proxy };
+  }
+
+  return next;
+}
+
+function buildAdminConfigResponse(cfg) {
+  const pathValue = cfg.path || '/ws';
+  return {
+    ...cfg,
+    UUID: cfg.uuid || '',
+    DOMAIN: cfg.domain || '',
+    HOST: cfg.domain || '',
+    PATH: pathValue,
+    WSPATH: String(pathValue).replace(/^\//, ''),
+    SUB_PATH: cfg.subPath || 'sub',
+    NAME: cfg.name || '',
+    SNI: cfg.sni || cfg.domain || '',
+    HOST_HEADER: cfg.hostHeader || cfg.domain || '',
+  };
+}
+
 function parseHostPortLoose(value, defaultPort = 443) {
   const raw = String(value || '').trim();
   if (!raw) return null;
@@ -128,14 +195,15 @@ async function loadUpstreamAdminHtml() {
   });
   const html = String(response.data || '');
   const inject = `<script>(function(){
-function removeById(id){var el=document.getElementById(id); if(el) el.remove();}
+function hideNode(el){ if(!el) return; el.style.display='none'; el.setAttribute('aria-hidden','true'); }
+function hideById(id){ hideNode(document.getElementById(id)); }
 function removeByButtonOnclick(fnName){
   var btns=document.querySelectorAll('button[onclick]');
   btns.forEach(function(btn){
     var on=btn.getAttribute('onclick')||'';
     if(on.indexOf(fnName)>=0){
       var card=btn.closest('.section-card,.status-card,.config-card,.stat-card,.card,.module-card,.dashboard-card');
-      if(card) card.remove(); else btn.remove();
+      if(card) hideNode(card); else hideNode(btn);
     }
   });
 }
@@ -144,15 +212,18 @@ function removeByText(text){
   nodes.forEach(function(n){
     if((n.textContent||'').indexOf(text)>=0){
       var card=n.closest('.section-card,.status-card,.config-card,.stat-card,.card,.module-card,.dashboard-card');
-      if(card) card.remove();
+      if(card) hideNode(card);
     }
   });
 }
 function run(){
-  ['clearTelegramModal','telegramConfigModal','clearCloudflareModal','cloudflareConfigModal'].forEach(removeById);
+  ['clearTelegramModal','telegramConfigModal','clearCloudflareModal','cloudflareConfigModal'].forEach(hideById);
   ['openTelegramConfigModal','clearTelegramConfig','openCloudflareConfigModal','clearCloudflareConfig','testTelegramConfig','confirmTelegramConfig','testCloudflareConfig','confirmCloudflareConfig'].forEach(removeByButtonOnclick);
   ['Telegram Bot 通知设置','Cloudflare Workers/Pages 可用请求数统计','Telegram'].forEach(removeByText);
 }
+['openTelegramConfigModal','clearTelegramConfig','testTelegramConfig','confirmTelegramConfig','closeTelegramConfigModal','openCloudflareConfigModal','clearCloudflareConfig','testCloudflareConfig','confirmCloudflareConfig','closeCloudflareConfigModal'].forEach(function(fn){
+  if(typeof window[fn] !== 'function') window[fn] = function(){ return false; };
+});
 run();
 new MutationObserver(run).observe(document.documentElement,{childList:true,subtree:true});
 })();</script>`;
@@ -385,8 +456,16 @@ const httpServer = http.createServer(async (req, res) => {
         const params = new URLSearchParams(body);
         const inputPassword = params.get('password') || '';
         const adminPassword = storage.getAdminPassword(config);
+        const wantsJson = String(req.headers.accept || '').includes('application/json');
         if (inputPassword === adminPassword) {
           const auth = storage.createSession(UA, config);
+          if (!wantsJson) {
+            res.writeHead(302, {
+              Location: '/admin',
+              'Set-Cookie': `auth=${auth}; Path=/; Max-Age=86400; HttpOnly`
+            });
+            return res.end('Redirecting...');
+          }
           res.writeHead(200, {
             'Content-Type': 'application/json; charset=utf-8',
             'Set-Cookie': `auth=${auth}; Path=/; Max-Age=86400; HttpOnly`
@@ -460,13 +539,15 @@ const httpServer = http.createServer(async (req, res) => {
 
   if (url.pathname === '/admin/config.json') {
     if (!requireAdmin(req, res)) return;
-    if (req.method === 'GET') return sendJson(res, storage.loadConfig());
+    if (req.method === 'GET') return sendJson(res, buildAdminConfigResponse(storage.loadConfig()));
     if (req.method === 'POST') {
       let body = '';
       req.on('data', c => body += c);
       req.on('end', () => {
         try {
-          const newConfig = JSON.parse(body);
+          const parsedBody = JSON.parse(body);
+          const currentCfg = storage.loadConfig();
+          const newConfig = normalizeAdminConfigPayload(parsedBody, currentCfg);
           storage.saveConfig(newConfig);
           return sendJson(res, { success: true, message: 'saved' });
         } catch (e) {

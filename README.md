@@ -20,12 +20,12 @@
 | --- | --- | --- | --- |
 | `PORT` | 否 | `7860` | 监听端口（Hugging Face Docker Space 推荐） |
 | `UUID` | 否 | `5efabea4-f6d4-91fd-b8f0-17e004c89c60` | 用户 UUID |
-| `DOMAIN` | 否 | `tunnel.tjhome.top` | 有域名时默认启用 TLS 链接参数 |
+| `DOMAIN` | 否 | 空 | 建议通过 ENV/Secrets 设置你的实际域名 |
 | `WSPATH` | 否 | UUID 前 8 位 | WS 路径（不带前导 `/`） |
 | `SUB_PATH` | 否 | `sub` | 订阅路径 token |
 | `NAME` | 否 | 空 | 节点名前缀 |
-| `SNI` | 否 | `DOMAIN` | 订阅链接中的 SNI（用于隐藏/伪装） |
-| `HOST_HEADER` | 否 | `DOMAIN` | 订阅链接中的 WS Host 头 |
+| `SNI` | 否 | `DOMAIN` | 订阅链接中的 SNI（建议通过 ENV/Secrets 设置） |
+| `HOST_HEADER` | 否 | `DOMAIN` | 订阅链接中的 WS Host 头（建议通过 ENV/Secrets 设置） |
 | `ADMIN`/`PASSWORD` | 否 | `CHANGE_ME_ADMIN_PASSWORD` | 后台登录密码 |
 | `ADMIN_SECRET`/`KEY` | 否 | `CHANGE_ME_ADMIN_SECRET` | 登录会话签名密钥 |
 
