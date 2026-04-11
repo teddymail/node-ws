@@ -1,6 +1,6 @@
 {
-  "adminPassword": "yk123mm2008",
-  "adminSecret": "local-secret",
+  "adminPassword": "CHANGE_ME_ADMIN_PASSWORD",
+  "adminSecret": "CHANGE_ME_ADMIN_SECRET",
   "uuid": "5efabea4-f6d4-91fd-b8f0-17e004c89c60",
   "domain": "tunnel.tjhome.top",
   "path": "/ws",

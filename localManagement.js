@@ -15,8 +15,8 @@ function ensureFile(filePath, defaultContent) {
 function defaultConfig() {
   const defaultDomain = process.env.DOMAIN || 'tunnel.tjhome.top';
   return {
-    adminPassword: process.env.ADMIN || process.env.PASSWORD || 'yk123mm2008',
-    adminSecret: process.env.ADMIN_SECRET || process.env.KEY || 'local-secret',
+    adminPassword: process.env.ADMIN || process.env.PASSWORD || 'CHANGE_ME_ADMIN_PASSWORD',
+    adminSecret: process.env.ADMIN_SECRET || process.env.KEY || 'CHANGE_ME_ADMIN_SECRET',
     uuid: process.env.UUID || '5efabea4-f6d4-91fd-b8f0-17e004c89c60',
     domain: defaultDomain,
     path: process.env.WSPATH ? `/${process.env.WSPATH}` : '/ws',
@@ -128,11 +128,11 @@ function maskSensitive(text, prefix = 3, suffix = 2) {
 }
 
 function getAdminPassword(config) {
-  return config.adminPassword || process.env.ADMIN || process.env.PASSWORD || process.env.KEY || 'yk123mm2008';
+  return process.env.ADMIN || process.env.PASSWORD || config.adminPassword || process.env.KEY || 'CHANGE_ME_ADMIN_PASSWORD';
 }
 
 function getAdminSecret(config) {
-  return config.adminSecret || process.env.ADMIN_SECRET || process.env.KEY || 'local-secret';
+  return process.env.ADMIN_SECRET || config.adminSecret || process.env.KEY || 'CHANGE_ME_ADMIN_SECRET';
 }
 
 function createSession(userAgent, config) {

@@ -20,14 +20,30 @@
 | --- | --- | --- | --- |
 | `PORT` | 否 | `7860` | 监听端口（Hugging Face Docker Space 推荐） |
 | `UUID` | 否 | `5efabea4-f6d4-91fd-b8f0-17e004c89c60` | 用户 UUID |
-| `DOMAIN` | 否 | 空 | 有域名时默认启用 TLS 链接参数 |
+| `DOMAIN` | 否 | `tunnel.tjhome.top` | 有域名时默认启用 TLS 链接参数 |
 | `WSPATH` | 否 | UUID 前 8 位 | WS 路径（不带前导 `/`） |
 | `SUB_PATH` | 否 | `sub` | 订阅路径 token |
 | `NAME` | 否 | 空 | 节点名前缀 |
 | `SNI` | 否 | `DOMAIN` | 订阅链接中的 SNI（用于隐藏/伪装） |
 | `HOST_HEADER` | 否 | `DOMAIN` | 订阅链接中的 WS Host 头 |
-| `ADMIN`/`PASSWORD` | 否 | `yk123mm2008` | 后台登录密码 |
-| `ADMIN_SECRET`/`KEY` | 否 | `local-secret` | 登录会话签名密钥 |
+| `ADMIN`/`PASSWORD` | 否 | `CHANGE_ME_ADMIN_PASSWORD` | 后台登录密码 |
+| `ADMIN_SECRET`/`KEY` | 否 | `CHANGE_ME_ADMIN_SECRET` | 登录会话签名密钥 |
+
+## GitHub Secrets 自动注入
+
+已支持通过 GitHub Actions 构建镜像时自动注入变量。请在仓库 `Settings -> Secrets and variables -> Actions` 中添加：
+
+- `ADMIN`
+- `ADMIN_SECRET`
+- `UUID`
+- `DOMAIN`
+- `SNI`
+- `HOST_HEADER`
+- `SUB_PATH`
+- `WSPATH`
+
+这些值会在 workflow 构建镜像时作为 `build-args` 注入并写入容器环境变量。
+建议不要在仓库文件里保存真实密码，`config.json` 保持占位值即可。
 
 ## 优选 IP
 
