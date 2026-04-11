@@ -723,12 +723,16 @@ const httpServer = http.createServer(async (req, res) => {
     const defaultPort = rawProxyIp ? 443 : (url.searchParams.get('https') ? 443 : 1080);
     const parsed = parseHostPortLoose(raw, defaultPort);
     if (!parsed?.host || !parsed?.port) return sendJson(res, { success: false, error: 'invalid proxy address' }, 400);
+    const startAt = Date.now();
     const ok = await checkTcpConnect(parsed.host, parsed.port, 4000);
+    const responseTime = Math.max(1, Date.now() - startAt);
     return sendJson(res, {
       success: ok,
+      type: rawProxyIp ? 'ProxyIP' : 'Proxy',
       protocol: parsed.protocol || 'socks5',
       host: parsed.host,
       port: parsed.port,
+      responseTime,
       message: ok ? 'proxy reachable' : 'proxy unreachable'
     }, 200);
   }
