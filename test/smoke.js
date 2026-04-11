@@ -77,6 +77,7 @@ function request({ port, path, method = 'GET', headers = {}, body = '' }) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json',
         'Content-Length': Buffer.byteLength(loginBody),
       },
       body: loginBody,

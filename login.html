@@ -13,10 +13,35 @@
 <body>
   <div class="box">
     <h2>管理员登录</h2>
-    <form method="post" action="/login">
+    <form id="loginForm" method="post" action="/login">
       <input name="password" type="password" placeholder="请输入密码">
       <button type="submit">登录</button>
     </form>
+    <p id="msg" style="margin-top:10px;color:#d33;font-size:13px;min-height:18px;"></p>
   </div>
+  <script>
+    const form = document.getElementById('loginForm');
+    const msg = document.getElementById('msg');
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      msg.textContent = '';
+      const body = new URLSearchParams(new FormData(form)).toString();
+      try {
+        const r = await fetch('/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
+          body
+        });
+        const data = await r.json().catch(() => ({}));
+        if (r.ok && data.success) {
+          location.href = '/admin';
+          return;
+        }
+        msg.textContent = data.error || '登录失败，请检查密码';
+      } catch {
+        msg.textContent = '网络错误，请稍后重试';
+      }
+    });
+  </script>
 </body>
 </html>

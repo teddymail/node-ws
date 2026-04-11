@@ -13,7 +13,7 @@ function ensureFile(filePath, defaultContent) {
 }
 
 function defaultConfig() {
-  const defaultDomain = process.env.DOMAIN || 'tunnel.tjhome.top';
+  const defaultDomain = process.env.DOMAIN || '';
   return {
     adminPassword: process.env.ADMIN || process.env.PASSWORD || 'CHANGE_ME_ADMIN_PASSWORD',
     adminSecret: process.env.ADMIN_SECRET || process.env.KEY || 'CHANGE_ME_ADMIN_SECRET',
