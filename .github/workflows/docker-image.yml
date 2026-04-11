@@ -45,6 +45,16 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
+          build-args: |
+            PORT=7860
+            ADMIN=${{ secrets.ADMIN }}
+            ADMIN_SECRET=${{ secrets.ADMIN_SECRET }}
+            UUID=${{ secrets.UUID }}
+            DOMAIN=${{ secrets.DOMAIN }}
+            SNI=${{ secrets.SNI }}
+            HOST_HEADER=${{ secrets.HOST_HEADER }}
+            SUB_PATH=${{ secrets.SUB_PATH }}
+            WSPATH=${{ secrets.WSPATH }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 

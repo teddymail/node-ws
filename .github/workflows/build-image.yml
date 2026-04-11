@@ -38,6 +38,16 @@ jobs:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
+          build-args: |
+            PORT=7860
+            ADMIN=${{ secrets.ADMIN }}
+            ADMIN_SECRET=${{ secrets.ADMIN_SECRET }}
+            UUID=${{ secrets.UUID }}
+            DOMAIN=${{ secrets.DOMAIN }}
+            SNI=${{ secrets.SNI }}
+            HOST_HEADER=${{ secrets.HOST_HEADER }}
+            SUB_PATH=${{ secrets.SUB_PATH }}
+            WSPATH=${{ secrets.WSPATH }}
           tags: |
             ghcr.io/${{ github.repository_owner }}/ws:latest
           labels: |
