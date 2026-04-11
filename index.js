@@ -106,7 +106,8 @@ function normalizeAdminConfigPayload(input, current) {
   const maybeUuid = src.uuid || src.UUID;
   if (maybeUuid) next.uuid = String(maybeUuid).trim();
 
-  const maybeDomain = src.domain || src.DOMAIN || src.host || src.HOST;
+  const hostsFromArray = Array.isArray(src.HOSTS) ? src.HOSTS.map(normalizeHost).filter(Boolean) : [];
+  const maybeDomain = src.domain || src.DOMAIN || src.host || src.HOST || hostsFromArray[0];
   if (maybeDomain !== undefined) next.domain = normalizeHost(maybeDomain);
 
   const maybePath = src.path || src.PATH;
@@ -127,6 +128,12 @@ function normalizeAdminConfigPayload(input, current) {
   if (src.sni || src.SNI) next.sni = normalizeHost(src.sni || src.SNI);
   if (src.hostHeader || src.HOST_HEADER) next.hostHeader = normalizeHost(src.hostHeader || src.HOST_HEADER);
 
+  // Keep legacy fields aligned to a single source-of-truth: domain.
+  if (next.domain) {
+    if (!next.sni) next.sni = next.domain;
+    if (!next.hostHeader) next.hostHeader = next.domain;
+  }
+
   if (src.subscription && typeof src.subscription === 'object') {
     next.subscription = { ...(next.subscription || {}), ...src.subscription };
   }
@@ -140,17 +147,43 @@ function normalizeAdminConfigPayload(input, current) {
 
 function buildAdminConfigResponse(cfg) {
   const pathValue = cfg.path || '/ws';
+  const hostValue = cfg.domain || '';
+  const portValue = hostValue ? 443 : PORT;
+  const tlsValue = Boolean(hostValue);
+  let linkValue = '';
+  try {
+    const links = sub.buildLinks({
+      uuid: cfg.uuid || UUID,
+      host: hostValue || 'example.com',
+      port: portValue,
+      path: pathValue,
+      name: cfg.name || 'Node',
+      isp: 'Node',
+      tls: tlsValue,
+      sni: cfg.sni || hostValue || 'example.com',
+      hostHeader: cfg.hostHeader || hostValue || 'example.com',
+    });
+    linkValue = Array.isArray(links) && links.length > 0 ? links[0] : '';
+  } catch {
+    linkValue = '';
+  }
+
   return {
     ...cfg,
     UUID: cfg.uuid || '',
-    DOMAIN: cfg.domain || '',
-    HOST: cfg.domain || '',
+    DOMAIN: hostValue,
+    HOST: hostValue,
+    HOSTS: hostValue ? [hostValue] : [],
     PATH: pathValue,
     WSPATH: String(pathValue).replace(/^\//, ''),
     SUB_PATH: cfg.subPath || 'sub',
     NAME: cfg.name || '',
-    SNI: cfg.sni || cfg.domain || '',
-    HOST_HEADER: cfg.hostHeader || cfg.domain || '',
+    SNI: cfg.sni || hostValue || '',
+    HOST_HEADER: cfg.hostHeader || hostValue || '',
+    LINK: linkValue,
+    优选订阅生成: {
+      TOKEN: cfg.subPath || 'sub'
+    }
   };
 }
 
@@ -218,10 +251,10 @@ function removeByText(text){
 }
 function run(){
   ['clearTelegramModal','telegramConfigModal','clearCloudflareModal','cloudflareConfigModal'].forEach(hideById);
-  ['openTelegramConfigModal','clearTelegramConfig','openCloudflareConfigModal','clearCloudflareConfig','testTelegramConfig','confirmTelegramConfig','testCloudflareConfig','confirmCloudflareConfig'].forEach(removeByButtonOnclick);
-  ['Telegram Bot 通知设置','Cloudflare Workers/Pages 可用请求数统计','Telegram'].forEach(removeByText);
+  ['openTelegramConfigModal','clearTelegramConfig','openCloudflareConfigModal','clearCloudflareConfig','testTelegramConfig','confirmTelegramConfig','testCloudflareConfig','confirmCloudflareConfig','openNotificationConfigModal','clearNotificationConfig','testNotificationConfig','confirmNotificationConfig'].forEach(removeByButtonOnclick);
+  ['Telegram Bot 通知设置','Cloudflare Workers/Pages 可用请求数统计','Telegram','消息通知设置','通知设置','🔔 消息通知设置'].forEach(removeByText);
 }
-['openTelegramConfigModal','clearTelegramConfig','testTelegramConfig','confirmTelegramConfig','closeTelegramConfigModal','openCloudflareConfigModal','clearCloudflareConfig','testCloudflareConfig','confirmCloudflareConfig','closeCloudflareConfigModal'].forEach(function(fn){
+['openTelegramConfigModal','clearTelegramConfig','testTelegramConfig','confirmTelegramConfig','closeTelegramConfigModal','openCloudflareConfigModal','clearCloudflareConfig','testCloudflareConfig','confirmCloudflareConfig','closeCloudflareConfigModal','openNotificationConfigModal','clearNotificationConfig','testNotificationConfig','confirmNotificationConfig','closeNotificationConfigModal'].forEach(function(fn){
   if(typeof window[fn] !== 'function') window[fn] = function(){ return false; };
 });
 run();
