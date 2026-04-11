@@ -690,7 +690,7 @@ const httpServer = http.createServer(async (req, res) => {
   }
 
   if (url.pathname === '/admin/check') {
-    if (!requireAdmin(req, res)) return;
+    const rawProxyIp = url.searchParams.get('proxyip') || '';
     const raw =
       url.searchParams.get('proxyip') ||
       url.searchParams.get('socks5') ||
@@ -698,7 +698,8 @@ const httpServer = http.createServer(async (req, res) => {
       url.searchParams.get('https') ||
       '';
     if (!raw) return sendJson(res, { success: false, error: 'missing proxy parameter' }, 400);
-    const parsed = parseHostPortLoose(raw, url.searchParams.get('https') ? 443 : 1080);
+    const defaultPort = rawProxyIp ? 443 : (url.searchParams.get('https') ? 443 : 1080);
+    const parsed = parseHostPortLoose(raw, defaultPort);
     if (!parsed?.host || !parsed?.port) return sendJson(res, { success: false, error: 'invalid proxy address' }, 400);
     const ok = await checkTcpConnect(parsed.host, parsed.port, 4000);
     return sendJson(res, {
@@ -707,7 +708,7 @@ const httpServer = http.createServer(async (req, res) => {
       host: parsed.host,
       port: parsed.port,
       message: ok ? 'proxy reachable' : 'proxy unreachable'
-    }, ok ? 200 : 503);
+    }, 200);
   }
 
   if (url.pathname === '/admin/getADDAPI') {
