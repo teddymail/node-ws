@@ -197,6 +197,15 @@ function buildAdminConfigResponse(cfg, requestHost = '') {
     SNI: cfg.sni || hostValue || '',
     HOST_HEADER: cfg.hostHeader || hostValue || '',
     LINK: linkValue,
+    反代: {
+      PROXYIP: cfg?.proxy?.mode === 'auto' ? 'auto' : (cfg?.proxy?.account || ''),
+      SOCKS5: {
+        启用: cfg?.proxy?.enabled ? (cfg?.proxy?.mode || 'socks5') : false,
+        账号: cfg?.proxy?.account || '',
+        全局: Boolean(cfg?.proxy?.global),
+      },
+      路径模板: cfg?.proxy?.pathTemplate || {},
+    },
     优选订阅生成: {
       TOKEN: subToken
     }
@@ -288,6 +297,20 @@ function ensureTokenRegenerateButton(){
     }catch(_e){ alert('网络错误，重置失败'); }
   };
   document.body.appendChild(btn);
+}
+var _nativeFetch = window.fetch ? window.fetch.bind(window) : null;
+if(_nativeFetch){
+  window.fetch = function(input, init){
+    try{
+      var raw = (typeof input === 'string') ? input : (input && input.url ? input.url : '');
+      var u = new URL(raw, location.origin);
+      if(u.hostname === 'check-proxyip-api.cmliussss.net' && u.pathname === '/check'){
+        var proxyip = u.searchParams.get('proxyip') || '';
+        return _nativeFetch('/admin/check?proxyip=' + encodeURIComponent(proxyip), init);
+      }
+    }catch(_e){}
+    return _nativeFetch(input, init);
+  };
 }
 ['openTelegramConfigModal','clearTelegramConfig','testTelegramConfig','confirmTelegramConfig','closeTelegramConfigModal','openCloudflareConfigModal','clearCloudflareConfig','testCloudflareConfig','confirmCloudflareConfig','closeCloudflareConfigModal','openNotificationConfigModal','clearNotificationConfig','testNotificationConfig','confirmNotificationConfig','closeNotificationConfigModal'].forEach(function(fn){
   if(typeof window[fn] !== 'function') window[fn] = function(){ return false; };
@@ -668,7 +691,12 @@ const httpServer = http.createServer(async (req, res) => {
 
   if (url.pathname === '/admin/check') {
     if (!requireAdmin(req, res)) return;
-    const raw = url.searchParams.get('socks5') || url.searchParams.get('http') || url.searchParams.get('https') || '';
+    const raw =
+      url.searchParams.get('proxyip') ||
+      url.searchParams.get('socks5') ||
+      url.searchParams.get('http') ||
+      url.searchParams.get('https') ||
+      '';
     if (!raw) return sendJson(res, { success: false, error: 'missing proxy parameter' }, 400);
     const parsed = parseHostPortLoose(raw, url.searchParams.get('https') ? 443 : 1080);
     if (!parsed?.host || !parsed?.port) return sendJson(res, { success: false, error: 'invalid proxy address' }, 400);
