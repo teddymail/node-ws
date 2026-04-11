@@ -31,11 +31,23 @@ function ensureStableSubToken() {
   const envToken = String(process.env.SUB_TOKEN || '').trim();
   if (envToken) return envToken;
 
-  const persisted = storage.loadSubToken();
+  const persisted = typeof storage.loadSubToken === 'function'
+    ? storage.loadSubToken()
+    : String(config?.subToken || config?.subscription?.token || '').trim();
   if (persisted) return persisted;
 
   const generated = crypto.randomBytes(16).toString('hex');
-  storage.saveSubToken(generated);
+  if (typeof storage.saveSubToken === 'function') {
+    storage.saveSubToken(generated);
+  } else {
+    const nextCfg = {
+      ...config,
+      subToken: generated,
+      subscription: { ...(config.subscription || {}), token: generated },
+    };
+    storage.saveConfig(nextCfg);
+    config = nextCfg;
+  }
   return generated;
 }
 
@@ -671,7 +683,17 @@ const httpServer = http.createServer(async (req, res) => {
     if (!requireAdmin(req, res)) return;
     if (req.method !== 'POST') return sendJson(res, { success: false, error: 'method not allowed' }, 405);
     StableSubToken = crypto.randomBytes(16).toString('hex');
-    storage.saveSubToken(StableSubToken);
+    if (typeof storage.saveSubToken === 'function') {
+      storage.saveSubToken(StableSubToken);
+    } else {
+      const nextCfg = {
+        ...config,
+        subToken: StableSubToken,
+        subscription: { ...(config.subscription || {}), token: StableSubToken },
+      };
+      storage.saveConfig(nextCfg);
+      config = nextCfg;
+    }
     return sendJson(res, { success: true, token: StableSubToken, message: 'token regenerated' });
   }
 
