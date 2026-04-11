@@ -21,6 +21,7 @@ function defaultConfig() {
     domain: defaultDomain,
     path: process.env.WSPATH ? `/${process.env.WSPATH}` : '/ws',
     subPath: process.env.SUB_PATH || 'sub',
+    subToken: process.env.SUB_TOKEN || '',
     name: process.env.NAME || '',
     sni: process.env.SNI || process.env.DOMAIN || defaultDomain,
     hostHeader: process.env.HOST_HEADER || process.env.DOMAIN || defaultDomain,
@@ -33,7 +34,8 @@ function defaultConfig() {
     subscription: {
       subconverter: '',
       bestSubGenerator: '',
-      randomIpCount: 4
+      randomIpCount: 4,
+      token: process.env.SUB_TOKEN || ''
     },
     proxy: {
       enabled: false,

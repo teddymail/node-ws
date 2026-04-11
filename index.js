@@ -24,10 +24,47 @@ const PORT = Number(process.env.PORT || 7860);
 let uuid = UUID.replace(/-/g, '');
 let CurrentDomain = DOMAIN;
 let CurrentPort = DOMAIN ? 443 : PORT;
+let StableSubToken = '';
 const DNS_SERVERS = ['8.8.4.4', '1.1.1.1'];
+
+function getTokenFromConfig(cfg) {
+  return String(
+    process.env.SUB_TOKEN ||
+    cfg?.subToken ||
+    cfg?.subscription?.token ||
+    ''
+  ).trim();
+}
+
+function persistSubTokenIfMissing(cfg) {
+  const existing = getTokenFromConfig(cfg);
+  if (existing) {
+    if (cfg.subToken !== existing || cfg?.subscription?.token !== existing) {
+      const nextCfg = {
+        ...cfg,
+        subToken: existing,
+        subscription: { ...(cfg.subscription || {}), token: existing },
+      };
+      storage.saveConfig(nextCfg);
+      config = nextCfg;
+    }
+    return existing;
+  }
+
+  const generated = crypto.randomBytes(16).toString('hex');
+  const nextCfg = {
+    ...cfg,
+    subToken: generated,
+    subscription: { ...(cfg.subscription || {}), token: generated },
+  };
+  storage.saveConfig(nextCfg);
+  config = nextCfg;
+  return generated;
+}
 
 function reloadConfig() {
   config = storage.loadConfig();
+  StableSubToken = persistSubTokenIfMissing(config);
   CurrentDomain = config.domain || DOMAIN || CurrentDomain;
   uuid = String(config.uuid || UUID).replace(/-/g, '');
 }
@@ -142,10 +179,24 @@ function normalizeAdminConfigPayload(input, current) {
     next.proxy = { ...(next.proxy || {}), ...src.proxy };
   }
 
+  const maybeToken =
+    src.subToken ||
+    src.SUB_TOKEN ||
+    src?.subscription?.token ||
+    src?.['优选订阅生成']?.TOKEN;
+  if (maybeToken !== undefined && String(maybeToken).trim()) {
+    next.subToken = String(maybeToken).trim();
+    next.subscription = { ...(next.subscription || {}), token: next.subToken };
+  }
+
+  if (!next.subToken && next?.subscription?.token) {
+    next.subToken = String(next.subscription.token).trim();
+  }
+
   return next;
 }
 
-function buildAdminConfigResponse(cfg) {
+function buildAdminConfigResponse(cfg, requestHost = '') {
   const pathValue = cfg.path || '/ws';
   const hostValue = cfg.domain || '';
   const portValue = hostValue ? 443 : PORT;
@@ -168,6 +219,8 @@ function buildAdminConfigResponse(cfg) {
     linkValue = '';
   }
 
+  const subToken = getTokenFromConfig(cfg) || StableSubToken;
+
   return {
     ...cfg,
     UUID: cfg.uuid || '',
@@ -182,7 +235,7 @@ function buildAdminConfigResponse(cfg) {
     HOST_HEADER: cfg.hostHeader || hostValue || '',
     LINK: linkValue,
     优选订阅生成: {
-      TOKEN: cfg.subPath || 'sub'
+      TOKEN: subToken
     }
   };
 }
@@ -530,6 +583,12 @@ const httpServer = http.createServer(async (req, res) => {
   }
 
   if (url.pathname === `/${getRuntimeSubPath()}`) {
+    const expectedToken = StableSubToken || getTokenFromConfig(config);
+    const providedToken = String(url.searchParams.get('token') || '').trim();
+    if (!providedToken || providedToken !== expectedToken) {
+      return sendJson(res, { success: false, error: 'invalid token' }, 403);
+    }
+
     await getip();
     const addTxt = storage.loadAddTxt();
     const base64Content = await sub.generateSubscription({
@@ -541,6 +600,17 @@ const httpServer = http.createServer(async (req, res) => {
       hostHeader: config.hostHeader || config.domain || CurrentDomain,
       subscription: config.subscription || {},
     }, CurrentDomain, CurrentPort, addTxt);
+
+    const rawContent = sub.safeBase64Decode(base64Content) || '';
+
+    // Keep compatibility with admin-generated urls: /sub?token=...&b64|clash|sb
+    if (url.searchParams.has('clash') || url.searchParams.has('sb') || url.searchParams.has('raw')) {
+      return sendText(res, `${rawContent.trim()}\n`);
+    }
+    if (url.searchParams.has('b64')) {
+      return sendText(res, base64Content);
+    }
+
     return sendText(res, base64Content);
   }
 
@@ -572,7 +642,7 @@ const httpServer = http.createServer(async (req, res) => {
 
   if (url.pathname === '/admin/config.json') {
     if (!requireAdmin(req, res)) return;
-    if (req.method === 'GET') return sendJson(res, buildAdminConfigResponse(storage.loadConfig()));
+    if (req.method === 'GET') return sendJson(res, buildAdminConfigResponse(storage.loadConfig(), req.headers.host || ''));
     if (req.method === 'POST') {
       let body = '';
       req.on('data', c => body += c);

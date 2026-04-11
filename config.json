@@ -5,6 +5,7 @@
   "domain": "",
   "path": "/ws",
   "subPath": "sub",
+  "subToken": "smoke-test-token",
   "name": "",
   "sni": "",
   "hostHeader": "",
@@ -17,7 +18,8 @@
   "subscription": {
     "subconverter": "",
     "bestSubGenerator": "",
-    "randomIpCount": 4
+    "randomIpCount": 4,
+    "token": "smoke-test-token"
   },
   "proxy": {
     "enabled": false,
