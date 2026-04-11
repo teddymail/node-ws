@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const CONFIG_FILE = process.env.CONFIG_FILE || path.join(__dirname, 'config.json');
 const LOG_FILE = process.env.LOG_FILE || path.join(__dirname, 'log.json');
 const ADD_FILE = process.env.ADD_FILE || path.join(__dirname, 'ADD.txt');
+const TOKEN_FILE = process.env.TOKEN_FILE || path.join(__dirname, 'subtoken.txt');
 
 function ensureFile(filePath, defaultContent) {
   if (!fs.existsSync(filePath)) {
@@ -51,6 +52,7 @@ function initStorage() {
   ensureFile(CONFIG_FILE, JSON.stringify(defaultConfig(), null, 2));
   ensureFile(LOG_FILE, '[]');
   ensureFile(ADD_FILE, '');
+  ensureFile(TOKEN_FILE, '');
 }
 
 function readJson(filePath, fallback) {
@@ -117,6 +119,16 @@ function saveAddTxt(text) {
   writeText(ADD_FILE, text);
 }
 
+function loadSubToken() {
+  initStorage();
+  return readText(TOKEN_FILE, '').trim();
+}
+
+function saveSubToken(token) {
+  initStorage();
+  writeText(TOKEN_FILE, String(token || '').trim());
+}
+
 function md5md5(text) {
   const first = crypto.createHash('md5').update(String(text)).digest('hex');
   const second = crypto.createHash('md5').update(first.slice(7, 27)).digest('hex');
@@ -149,6 +161,7 @@ module.exports = {
   CONFIG_FILE,
   LOG_FILE,
   ADD_FILE,
+  TOKEN_FILE,
   initStorage,
   defaultConfig,
   loadConfig,
@@ -158,6 +171,8 @@ module.exports = {
   appendLog,
   loadAddTxt,
   saveAddTxt,
+  loadSubToken,
+  saveSubToken,
   md5md5,
   maskSensitive,
   getAdminPassword,
